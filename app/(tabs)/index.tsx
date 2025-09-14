@@ -1,13 +1,45 @@
 import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { Platform, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 
 import { HelloWave } from '@/components/hello-wave';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Link } from 'expo-router';
+import { useAuth } from '@/contexts/auth-context';
+import { useThemeColor } from '@/hooks/use-theme-color';
 
 export default function HomeScreen() {
+  const { user, signOut, clearSession, session } = useAuth();
+  const tintColor = useThemeColor({}, 'tint');
+
+  console.log('HomeScreen render - user:', user?.email, 'session exists:', !!session);
+
+  const handleSignOut = async () => {
+    console.log('Sign out button pressed');
+    try {
+      console.log('Calling signOut function');
+      await signOut();
+      console.log('Sign out completed');
+    } catch (error: any) {
+      console.log('Sign out error:', error);
+      Alert.alert('Error', error.message);
+    }
+  };
+
+  const handleClearSession = async () => {
+    console.log('Clear session button pressed');
+    try {
+      console.log('Calling clearSession function');
+      await clearSession();
+      console.log('Clear session completed');
+      Alert.alert('Success', 'Session cleared');
+    } catch (error: any) {
+      console.log('Clear session error:', error);
+      Alert.alert('Error', error.message);
+    }
+  };
+
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
@@ -18,8 +50,31 @@ export default function HomeScreen() {
         />
       }>
       <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
+        <ThemedText type="title">Welcome {user?.email}!</ThemedText>
         <HelloWave />
+      </ThemedView>
+      <ThemedView style={styles.stepContainer}>
+        <ThemedText type="subtitle">You&apos;re logged in!</ThemedText>
+        <ThemedText>
+          Email: <ThemedText type="defaultSemiBold">{user?.email}</ThemedText>
+        </ThemedText>
+        <ThemedText style={styles.debugText}>
+          Debug: User ID: {user?.id?.slice(0, 8)}... | Session: {session ? 'Yes' : 'No'}
+        </ThemedText>
+        <TouchableOpacity
+          style={[styles.signOutButton, { backgroundColor: tintColor }]}
+          onPress={handleSignOut}
+          activeOpacity={0.8}
+        >
+          <ThemedText style={styles.signOutText}>Sign Out</ThemedText>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.clearButton, { backgroundColor: '#ff4444' }]}
+          onPress={handleClearSession}
+          activeOpacity={0.8}
+        >
+          <ThemedText style={styles.signOutText}>Force Clear Session</ThemedText>
+        </TouchableOpacity>
       </ThemedView>
       <ThemedView style={styles.stepContainer}>
         <ThemedText type="subtitle">Step 1: Try it</ThemedText>
@@ -94,5 +149,31 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     position: 'absolute',
+  },
+  signOutButton: {
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 16,
+    minHeight: 48,
+    justifyContent: 'center',
+  },
+  signOutText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  clearButton: {
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 8,
+    minHeight: 48,
+    justifyContent: 'center',
+  },
+  debugText: {
+    fontSize: 12,
+    opacity: 0.7,
+    marginBottom: 8,
   },
 });
