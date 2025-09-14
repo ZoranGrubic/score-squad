@@ -14,6 +14,10 @@ const successColorDark = '#66bb6a';
 const warningColorLight = '#ff9800';
 const warningColorDark = '#ffb74d';
 
+// Gradient colors
+const gradientColorsLight = ['#667eea', '#764ba2', '#f093fb'] as const;
+const gradientColorsDark = ['#1a1a2e', '#16213e', '#0f3460'] as const;
+
 export const Colors = {
   light: {
     text: '#11181C',
@@ -37,6 +41,8 @@ export const Colors = {
     buttonText: '#ffffff',
     inputBorder: tintColorLight,
     placeholderText: '#9BA1A6',
+    // Gradient colors
+    gradientColors: gradientColorsLight,
   },
   dark: {
     text: '#ECEDEE',
@@ -60,6 +66,8 @@ export const Colors = {
     buttonText: '#000000',
     inputBorder: tintColorDark,
     placeholderText: '#687076',
+    // Gradient colors
+    gradientColors: gradientColorsDark,
   },
 };
 

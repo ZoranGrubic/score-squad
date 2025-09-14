@@ -10,21 +10,15 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
-import { useColorScheme } from '@/hooks/use-color-scheme'
+import { useThemeColor } from '@/hooks/use-theme-color'
 
 export default function WelcomeScreen() {
-  const colorScheme = useColorScheme()
   const insets = useSafeAreaInsets()
-
+  const gradientColors = useThemeColor({}, 'gradientColors') as readonly [string, string, string]
 
   const handleGetStarted = () => {
     router.push('/auth')
   }
-
-  // Define gradient colors based on theme
-  const gradientColors = colorScheme === 'dark'
-    ? ['#1a1a2e', '#16213e', '#0f3460'] as const
-    : ['#667eea', '#764ba2', '#f093fb'] as const
 
   return (
     <>
