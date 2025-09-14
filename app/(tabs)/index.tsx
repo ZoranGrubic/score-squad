@@ -44,7 +44,7 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <View style={{ paddingBottom: Math.max(insets.bottom, 20) }} />
+          <View style={{ paddingBottom: Math.max(insets.bottom + 80, 100) }} />
         </View>
       </LinearGradient>
     </>

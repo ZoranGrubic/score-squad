@@ -18,7 +18,9 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
+      "edgeToEdgeEnforced": true,
+      "navigationBarStyle": "dark-content",
+      "navigationBarBackgroundColor": "transparent",
       "predictiveBackGestureEnabled": false
     },
     "web": {
