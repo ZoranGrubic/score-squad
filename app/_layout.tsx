@@ -1,6 +1,5 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, router } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 
@@ -21,12 +20,12 @@ function AppContent() {
 
   useEffect(() => {
     if (!loading) {
-      if (!user) {
-        console.log('No user, redirecting to auth');
-        router.replace('/auth');
-      } else {
+      if (user) {
         console.log('User exists, redirecting to tabs');
         router.replace('/(tabs)');
+      } else {
+        console.log('No user, redirecting to welcome');
+        router.replace('/welcome');
       }
     }
   }, [user, loading]);
@@ -41,17 +40,12 @@ function AppContent() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        {user ? (
-          <>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-          </>
-        ) : (
-          <Stack.Screen name="auth" options={{ headerShown: false }} />
-        )}
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="modal" options={{ presentation: 'modal', headerShown: true, title: 'Modal' }} />
+        <Stack.Screen name="welcome" />
+        <Stack.Screen name="auth" />
       </Stack>
-      <StatusBar style="auto" />
     </ThemeProvider>
   );
 }

@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native'
+import { StatusBar } from 'expo-status-bar'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
 import { useAuth } from '@/contexts/auth-context'
@@ -19,8 +20,11 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false)
 
   const { signIn, signUp } = useAuth()
-  const tintColor = useThemeColor({}, 'tint')
+  const buttonPrimaryColor = useThemeColor({}, 'buttonPrimary')
   const textColor = useThemeColor({}, 'text')
+  const inputBorderColor = useThemeColor({}, 'inputBorder')
+  const placeholderColor = useThemeColor({}, 'placeholderText')
+  const buttonTextColor = useThemeColor({}, 'buttonText')
 
   const handleAuth = async () => {
     if (!email || !password) {
@@ -55,23 +59,21 @@ export default function AuthScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <>
+      <StatusBar style="auto" />
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
       <ThemedView style={styles.content}>
         <ThemedText type="title" style={styles.title}>
           {isSignUp ? 'Sign Up' : 'Sign In'}
         </ThemedText>
 
-        <ThemedText style={styles.debugText}>
-          💡 If signup fails, try: test@test.com / password123
-        </ThemedText>
-
         <TextInput
-          style={[styles.input, { borderColor: tintColor, color: textColor }]}
+          style={[styles.input, { borderColor: inputBorderColor, color: textColor }]}
           placeholder="Email"
-          placeholderTextColor={textColor}
+          placeholderTextColor={placeholderColor}
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
@@ -79,20 +81,20 @@ export default function AuthScreen() {
         />
 
         <TextInput
-          style={[styles.input, { borderColor: tintColor, color: textColor }]}
+          style={[styles.input, { borderColor: inputBorderColor, color: textColor }]}
           placeholder="Password"
-          placeholderTextColor={textColor}
+          placeholderTextColor={placeholderColor}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
         />
 
         <Pressable
-          style={[styles.button, { backgroundColor: tintColor }]}
+          style={[styles.button, { backgroundColor: buttonPrimaryColor }]}
           onPress={handleAuth}
           disabled={loading}
         >
-          <ThemedText style={styles.buttonText}>
+          <ThemedText style={[styles.buttonText, { color: buttonTextColor }]}>
             {loading ? 'Loading...' : isSignUp ? 'Sign Up' : 'Sign In'}
           </ThemedText>
         </Pressable>
@@ -101,7 +103,7 @@ export default function AuthScreen() {
           style={styles.switchButton}
           onPress={() => setIsSignUp(!isSignUp)}
         >
-          <ThemedText style={[styles.switchText, { color: tintColor }]}>
+          <ThemedText style={[styles.switchText, { color: buttonPrimaryColor }]}>
             {isSignUp
               ? 'Already have an account? Sign In'
               : "Don't have an account? Sign Up"}
@@ -109,6 +111,7 @@ export default function AuthScreen() {
         </Pressable>
       </ThemedView>
     </KeyboardAvoidingView>
+    </>
   )
 }
 
@@ -139,7 +142,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   buttonText: {
-    color: 'white',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -149,11 +151,5 @@ const styles = StyleSheet.create({
   },
   switchText: {
     fontSize: 14,
-  },
-  debugText: {
-    fontSize: 12,
-    opacity: 0.7,
-    textAlign: 'center',
-    marginBottom: 20,
   },
 })

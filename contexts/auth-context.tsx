@@ -20,17 +20,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('Initial session check:', session?.user?.email || 'No user')
-      setSession(session)
-      setUser(session?.user ?? null)
-      setLoading(false)
-    })
+    const initAuth = async () => {
+      try {
+        console.log('=== STARTING AUTH INITIALIZATION ===')
+        const { data: { session }, error } = await supabase.auth.getSession()
+        console.log('Initial session check:', {
+          email: session?.user?.email || 'No user',
+          hasSession: !!session,
+          userId: session?.user?.id,
+          accessToken: session?.access_token ? 'Present' : 'Missing',
+          error: error?.message
+        })
+        setSession(session)
+        setUser(session?.user ?? null)
+        console.log('Auth state set:', {
+          userSet: !!session?.user,
+          sessionSet: !!session
+        })
+      } catch (error) {
+        console.error('Error getting initial session:', error)
+        setSession(null)
+        setUser(null)
+      } finally {
+        setLoading(false)
+        console.log('=== AUTH INITIALIZATION COMPLETE ===')
+      }
+    }
+
+    initAuth()
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('Auth state changed:', event, session?.user?.email || 'No user')
+      console.log('Auth state changed:', {
+        event,
+        email: session?.user?.email || 'No user',
+        hasSession: !!session
+      })
       setSession(session)
       setUser(session?.user ?? null)
       setLoading(false)

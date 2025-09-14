@@ -11,7 +11,10 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 
 export default function HomeScreen() {
   const { user, signOut, clearSession, session } = useAuth();
-  const tintColor = useThemeColor({}, 'tint');
+  const buttonPrimaryColor = useThemeColor({}, 'buttonPrimary');
+  const buttonDangerColor = useThemeColor({}, 'buttonDanger');
+  const buttonTextColor = useThemeColor({}, 'buttonText');
+  const textMutedColor = useThemeColor({}, 'textMuted');
 
   console.log('HomeScreen render - user:', user?.email, 'session exists:', !!session);
 
@@ -40,6 +43,7 @@ export default function HomeScreen() {
     }
   };
 
+
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
@@ -58,22 +62,22 @@ export default function HomeScreen() {
         <ThemedText>
           Email: <ThemedText type="defaultSemiBold">{user?.email}</ThemedText>
         </ThemedText>
-        <ThemedText style={styles.debugText}>
+        <ThemedText style={[styles.debugText, { color: textMutedColor }]}>
           Debug: User ID: {user?.id?.slice(0, 8)}... | Session: {session ? 'Yes' : 'No'}
         </ThemedText>
         <TouchableOpacity
-          style={[styles.signOutButton, { backgroundColor: tintColor }]}
+          style={[styles.signOutButton, { backgroundColor: buttonPrimaryColor }]}
           onPress={handleSignOut}
           activeOpacity={0.8}
         >
-          <ThemedText style={styles.signOutText}>Sign Out</ThemedText>
+          <ThemedText style={[styles.signOutText, { color: buttonTextColor }]}>Sign Out</ThemedText>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.clearButton, { backgroundColor: '#ff4444' }]}
+          style={[styles.clearButton, { backgroundColor: buttonDangerColor }]}
           onPress={handleClearSession}
           activeOpacity={0.8}
         >
-          <ThemedText style={styles.signOutText}>Force Clear Session</ThemedText>
+          <ThemedText style={[styles.signOutText, { color: buttonTextColor }]}>Force Clear Session</ThemedText>
         </TouchableOpacity>
       </ThemedView>
       <ThemedView style={styles.stepContainer}>
@@ -159,7 +163,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   signOutText: {
-    color: 'white',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -173,7 +176,6 @@ const styles = StyleSheet.create({
   },
   debugText: {
     fontSize: 12,
-    opacity: 0.7,
     marginBottom: 8,
   },
 });
