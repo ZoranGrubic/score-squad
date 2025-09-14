@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { Session, User } from '@supabase/supabase-js'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from '@/lib/supabase'
 
 interface AuthContextType {
@@ -97,17 +98,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     console.log('signOut function called')
-    const { error } = await supabase.auth.signOut()
-    console.log('supabase.auth.signOut result:', error)
-    if (error) throw error
+    try {
+      // First check if there's an active session
+      const { data: { session: currentSession } } = await supabase.auth.getSession()
+      console.log('Current session before logout:', !!currentSession)
+
+      if (currentSession) {
+        const { error } = await supabase.auth.signOut({ scope: 'global' })
+        console.log('supabase.auth.signOut result:', error)
+        if (error) throw error
+      } else {
+        console.log('No active session, clearing local state only')
+      }
+
+      // Always clear local state and AsyncStorage regardless
+      await clearStorageAndState()
+    } catch (error: any) {
+      console.log('SignOut error:', error)
+      // Even if signOut fails, clear local state and storage
+      await clearStorageAndState()
+      // Only throw if it's not a session-related error
+      if (!error.message?.includes('session')) {
+        throw error
+      }
+    }
+  }
+
+  const clearStorageAndState = async () => {
+    try {
+      // Clear all Supabase-related keys from AsyncStorage
+      const keys = await AsyncStorage.getAllKeys()
+      const supabaseKeys = keys.filter(key =>
+        key.includes('supabase') ||
+        key.includes('sb-') ||
+        key.includes('auth')
+      )
+      if (supabaseKeys.length > 0) {
+        await AsyncStorage.multiRemove(supabaseKeys)
+        console.log('Cleared AsyncStorage keys:', supabaseKeys)
+      }
+    } catch (error) {
+      console.log('Error clearing AsyncStorage:', error)
+    }
+
+    // Always clear local state
+    setSession(null)
+    setUser(null)
+    console.log('Local auth state cleared')
   }
 
   const clearSession = async () => {
     console.log('clearSession function called')
-    await supabase.auth.signOut()
-    console.log('Force setting session and user to null')
-    setSession(null)
-    setUser(null)
+    try {
+      await supabase.auth.signOut({ scope: 'global' })
+    } catch (error) {
+      console.log('Error during clearSession signOut:', error)
+    }
+    await clearStorageAndState()
   }
 
   return (
