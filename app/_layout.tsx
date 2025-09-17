@@ -5,6 +5,7 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
+import { CompetitionProvider } from '@/contexts/competition-context';
 import { ThemedView } from '@/components/themed-view';
 import { ActivityIndicator } from 'react-native';
 
@@ -48,6 +49,7 @@ function AppContent() {
         <Stack.Screen name="create-competition" />
         <Stack.Screen name="competition-list" />
         <Stack.Screen name="competition-matches" />
+        <Stack.Screen name="competition-details" />
         <Stack.Screen name="select-matches" />
         <Stack.Screen name="select-friends" />
       </Stack>
@@ -58,7 +60,9 @@ function AppContent() {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <AppContent />
+      <CompetitionProvider>
+        <AppContent />
+      </CompetitionProvider>
     </AuthProvider>
   );
 }

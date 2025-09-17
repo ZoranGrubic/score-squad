@@ -7,6 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/auth-context';
+import { useCompetition } from '@/contexts/competition-context';
 
 interface Friend {
   id: string;
@@ -25,27 +26,24 @@ export default function SelectFriendsScreen() {
   const insets = useSafeAreaInsets();
   const gradientColors = useThemeColor({}, 'gradientColors') as readonly [string, string, string];
   const { user } = useAuth();
-  const params = useLocalSearchParams<{
-    selectedCompetitions?: string;
-    selectedMatches?: string;
-  }>();
+  const {
+    selectedMatches,
+    selectedFriends,
+    setSelectedFriends,
+    selectedCompetitions
+  } = useCompetition();
 
-  const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [searchText, setSearchText] = useState('');
-  const [competitionTitle, setCompetitionTitle] = useState('');
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(true);
-  const [competitions, setCompetitions] = useState<Competition[]>([]);
-
-  const parsedMatches = params.selectedMatches ? JSON.parse(params.selectedMatches) : [];
+  const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
 
   useEffect(() => {
-    if (params.selectedCompetitions) {
-      const parsedCompetitions = JSON.parse(params.selectedCompetitions);
-      setCompetitions(parsedCompetitions);
-    }
+    // Set current selected friends from context
+    setSelectedFriendIds(selectedFriends.map(f => f.id));
+
     fetchFriends();
-  }, [params.selectedCompetitions, user?.id]);
+  }, [selectedFriends, user?.id]);
 
   const fetchFriends = async () => {
     try {
@@ -77,33 +75,30 @@ export default function SelectFriendsScreen() {
   );
 
   const handleFriendToggle = (friendId: string) => {
-    setSelectedFriends(prev =>
-      prev.includes(friendId)
-        ? prev.filter(id => id !== friendId)
-        : [...prev, friendId]
-    );
+    const friend = friends.find(f => f.id === friendId);
+    if (!friend) return;
+
+    const isSelected = selectedFriendIds.includes(friendId);
+
+    if (isSelected) {
+      // Remove from selection
+      setSelectedFriendIds(prev => prev.filter(id => id !== friendId));
+      setSelectedFriends(selectedFriends.filter(f => f.id !== friendId));
+    } else {
+      // Add to selection
+      setSelectedFriendIds(prev => [...prev, friendId]);
+      setSelectedFriends([...selectedFriends, friend]);
+    }
   };
 
-  const handleCreateCompetition = () => {
+  const handleNext = () => {
     if (selectedFriends.length === 0) {
       Alert.alert('Error', 'Please select at least one friend');
       return;
     }
-    if (!competitionTitle.trim()) {
-      Alert.alert('Error', 'Please enter competition name');
-      return;
-    }
 
-    Alert.alert(
-      'Success!',
-      `Competition "${competitionTitle}" created with ${selectedFriends.length} friends and ${parsedMatches.length} matches.`,
-      [
-        {
-          text: 'OK',
-          onPress: () => router.push('/(tabs)')
-        }
-      ]
-    );
+    // Navigate back to create competition screen
+    router.back();
   };
 
   const handleBack = () => {
@@ -129,23 +124,11 @@ export default function SelectFriendsScreen() {
             <View style={styles.placeholder} />
           </View>
 
-          {/* Competition Title Input */}
-          <View style={styles.titleInputContainer}>
-            <Text style={styles.inputLabel}>Competition Name:</Text>
-            <TextInput
-              style={styles.titleInput}
-              value={competitionTitle}
-              onChangeText={setCompetitionTitle}
-              placeholder="Unesi naziv tvog takmičenja..."
-              placeholderTextColor="rgba(255, 255, 255, 0.5)"
-            />
-          </View>
-
           {/* Summary */}
-          {competitions.length > 0 && (
+          {selectedMatches.length > 0 && (
             <View style={styles.summaryContainer}>
               <Text style={styles.summaryText}>
-                {competitions.map(c => c.name).join(', ')} • {parsedMatches.length} utakmica
+                Selected {selectedMatches.length} matches for betting
               </Text>
             </View>
           )}
@@ -162,7 +145,7 @@ export default function SelectFriendsScreen() {
           {/* Selected Count */}
           <View style={styles.countContainer}>
             <Text style={styles.countText}>
-              Selected: {selectedFriends.length} {selectedFriends.length === 1 ? 'friend' : 'friends'}
+              Selected: {selectedFriendIds.length} {selectedFriendIds.length === 1 ? 'friend' : 'friends'}
             </Text>
           </View>
 
@@ -185,7 +168,7 @@ export default function SelectFriendsScreen() {
                   key={friend.id}
                   style={[
                     styles.friendItem,
-                    selectedFriends.includes(friend.id) && styles.selectedFriend
+                    selectedFriendIds.includes(friend.id) && styles.selectedFriend
                   ]}
                   onPress={() => handleFriendToggle(friend.id)}
                 >
@@ -198,7 +181,7 @@ export default function SelectFriendsScreen() {
                       <Text style={styles.friendEmail}>{friend.email}</Text>
                     </View>
                   </View>
-                  {selectedFriends.includes(friend.id) && (
+                  {selectedFriendIds.includes(friend.id) && (
                     <Text style={styles.checkmark}>✓</Text>
                   )}
                 </TouchableOpacity>
@@ -206,20 +189,20 @@ export default function SelectFriendsScreen() {
             </ScrollView>
           )}
 
-          {/* Create Button */}
+          {/* Done Button */}
           <TouchableOpacity
             style={[
               styles.createButton,
-              (selectedFriends.length === 0 || !competitionTitle.trim()) && styles.disabledButton
+              selectedFriendIds.length === 0 && styles.disabledButton
             ]}
-            onPress={handleCreateCompetition}
-            disabled={selectedFriends.length === 0 || !competitionTitle.trim()}
+            onPress={handleNext}
+            disabled={selectedFriendIds.length === 0}
           >
             <Text style={[
               styles.createButtonText,
-              (selectedFriends.length === 0 || !competitionTitle.trim()) && styles.disabledButtonText
+              selectedFriendIds.length === 0 && styles.disabledButtonText
             ]}>
-              Create Competition
+              Done ({selectedFriendIds.length})
             </Text>
           </TouchableOpacity>
 
@@ -267,26 +250,6 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     width: 40,
-  },
-  titleInputContainer: {
-    marginBottom: 20,
-  },
-  inputLabel: {
-    fontSize: 16,
-    color: '#ffffff',
-    marginBottom: 8,
-    fontWeight: '600',
-    textDecorationLine: 'none',
-  },
-  titleInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#ffffff',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   summaryContainer: {
     backgroundColor: 'rgba(255, 255, 255, 0.15)',

@@ -18,6 +18,12 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="my-competitions"
+        options={{
+          title: 'My Competitions',
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',

@@ -6,6 +6,7 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useCompetition } from '@/contexts/competition-context';
 
 interface Match {
   id: string;
@@ -31,21 +32,20 @@ interface Match {
 export default function CompetitionMatchesScreen() {
   const insets = useSafeAreaInsets();
   const gradientColors = useThemeColor({}, 'gradientColors') as readonly [string, string, string];
-  const { competitionId, competitionName, selectedMatches } = useLocalSearchParams<{
+  const { competitionId, competitionName } = useLocalSearchParams<{
     competitionId: string;
     competitionName: string;
-    selectedMatches: string;
   }>();
+  const { selectedMatches, setSelectedMatches } = useCompetition();
 
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
 
   useEffect(() => {
-    if (selectedMatches) {
-      const parsedMatches = JSON.parse(selectedMatches);
-      setSelectedMatchIds(parsedMatches);
-    }
+    // Set current selected matches from context
+    setSelectedMatchIds(selectedMatches.map(m => m.id));
+
     if (competitionId) {
       fetchMatches();
     }
@@ -80,16 +80,24 @@ export default function CompetitionMatchesScreen() {
   };
 
   const handleMatchToggle = (matchId: string) => {
-    setSelectedMatchIds(prev =>
-      prev.includes(matchId)
-        ? prev.filter(id => id !== matchId)
-        : [...prev, matchId]
-    );
+    const match = matches.find(m => m.id === matchId);
+    if (!match) return;
+
+    const isSelected = selectedMatchIds.includes(matchId);
+
+    if (isSelected) {
+      // Remove from selection
+      setSelectedMatchIds(prev => prev.filter(id => id !== matchId));
+      setSelectedMatches(selectedMatches.filter(m => m.id !== matchId));
+    } else {
+      // Add to selection
+      setSelectedMatchIds(prev => [...prev, matchId]);
+      setSelectedMatches([...selectedMatches, match]);
+    }
   };
 
   const handleBack = () => {
-    // Here we should save the selected matches for this competition
-    // and return to the competition list
+    // Navigate back to competition list
     router.back();
   };
 

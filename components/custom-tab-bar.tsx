@@ -13,6 +13,8 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
     switch (routeName) {
       case 'index':
         return <IconSymbol size={26} name="house.fill" color={color} />;
+      case 'my-competitions':
+        return <IconSymbol size={26} name="trophy.fill" color={color} />;
       case 'profile':
         return <IconSymbol size={26} name="person" color={color} />;
       default:
@@ -24,6 +26,8 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
     switch (routeName) {
       case 'index':
         return 'Home';
+      case 'my-competitions':
+        return 'Competitions';
       case 'profile':
         return 'Profile';
       default:

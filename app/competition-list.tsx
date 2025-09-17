@@ -3,9 +3,10 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useCompetition } from '@/contexts/competition-context';
 
 interface Competition {
   id: string;
@@ -20,13 +21,18 @@ interface Competition {
 export default function CompetitionListScreen() {
   const insets = useSafeAreaInsets();
   const gradientColors = useThemeColor({}, 'gradientColors') as readonly [string, string, string];
+  const { selectedMatches } = useCompetition();
+  const { editingCompetition } = useLocalSearchParams<{ editingCompetition?: string }>();
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedMatchesByCompetition, setSelectedMatchesByCompetition] = useState<{ [key: string]: string[] }>({});
+  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
+    if (editingCompetition) {
+      setIsEditing(true);
+    }
     fetchCompetitions();
-  }, []);
+  }, [selectedMatches, editingCompetition]);
 
   const fetchCompetitions = async () => {
     try {
@@ -43,7 +49,7 @@ export default function CompetitionListScreen() {
 
       setCompetitions((data || []).map(comp => ({
         ...comp,
-        selectedMatchesCount: selectedMatchesByCompetition[comp.id]?.length || 0
+        selectedMatchesCount: selectedMatches.filter(m => m.competition_id === comp.id).length
       })));
     } catch (error) {
       console.error('Error:', error);
@@ -58,8 +64,7 @@ export default function CompetitionListScreen() {
       pathname: '/competition-matches',
       params: {
         competitionId: competition.id,
-        competitionName: competition.name,
-        selectedMatches: JSON.stringify(selectedMatchesByCompetition[competition.id] || [])
+        competitionName: competition.name
       }
     });
   };
@@ -68,21 +73,66 @@ export default function CompetitionListScreen() {
     router.back();
   };
 
-  const handleDone = () => {
-    const totalMatches = Object.values(selectedMatchesByCompetition).reduce((total, matches) => total + matches.length, 0);
-
-    if (totalMatches === 0) {
+  const handleDone = async () => {
+    if (selectedMatches.length === 0) {
       Alert.alert('Error', 'Please select at least one match');
       return;
     }
 
-    // Here we could pass the selected matches back to the create competition screen
-    // For now, just go back
-    router.back();
+    if (isEditing && editingCompetition) {
+      // Add new matches to existing competition
+      try {
+        // First, get existing matches for this competition
+        const { data: existingMatches, error: fetchError } = await supabase
+          .from('friendly_competition_matches')
+          .select('match_id')
+          .eq('competition_id', editingCompetition);
+
+        if (fetchError) {
+          console.error('Error fetching existing matches:', fetchError);
+          Alert.alert('Error', 'Failed to fetch existing matches');
+          return;
+        }
+
+        const existingMatchIds = existingMatches?.map(m => m.match_id) || [];
+        const newMatches = selectedMatches.filter(match => !existingMatchIds.includes(match.id));
+
+        if (newMatches.length === 0) {
+          Alert.alert('Info', 'All selected matches are already in this competition');
+          router.back();
+          return;
+        }
+
+        // Add only new matches
+        const matchInserts = newMatches.map(match => ({
+          competition_id: editingCompetition,
+          match_id: match.id
+        }));
+
+        const { error: insertError } = await supabase
+          .from('friendly_competition_matches')
+          .insert(matchInserts);
+
+        if (insertError) {
+          console.error('Error adding matches:', insertError);
+          Alert.alert('Error', 'Failed to add matches to competition');
+          return;
+        }
+
+        Alert.alert('Success', `Added ${newMatches.length} new matches to competition!`);
+        router.back();
+      } catch (error) {
+        console.error('Error:', error);
+        Alert.alert('Error', 'An error occurred');
+      }
+    } else {
+      // Navigate back to create competition screen
+      router.back();
+    }
   };
 
   const getTotalSelectedMatches = () => {
-    return Object.values(selectedMatchesByCompetition).reduce((total, matches) => total + matches.length, 0);
+    return selectedMatches.length;
   };
 
   return (
@@ -100,12 +150,12 @@ export default function CompetitionListScreen() {
             <TouchableOpacity style={styles.backButton} onPress={handleBack}>
               <Text style={styles.backButtonText}>←</Text>
             </TouchableOpacity>
-            <Text style={styles.title}>Choose Matches</Text>
+            <Text style={styles.title}>{isEditing ? 'Add More Matches' : 'Choose Matches'}</Text>
             <View style={styles.placeholder} />
           </View>
 
           <Text style={styles.subtitle}>
-            Select competitions and matches your friends will bet on
+            {isEditing ? 'Select additional matches to add to your competition' : 'Select competitions and matches your friends will bet on'}
           </Text>
 
           {/* Total Count */}
@@ -167,7 +217,7 @@ export default function CompetitionListScreen() {
             disabled={getTotalSelectedMatches() === 0}
           >
             <Text style={[styles.doneButtonText, getTotalSelectedMatches() === 0 && styles.disabledButtonText]}>
-              Done ({getTotalSelectedMatches()})
+              {isEditing ? `Add Matches (${getTotalSelectedMatches()})` : `Done (${getTotalSelectedMatches()})`}
             </Text>
           </TouchableOpacity>
 
