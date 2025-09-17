@@ -45,6 +45,11 @@ function AppContent() {
         <Stack.Screen name="modal" options={{ presentation: 'modal', headerShown: true, title: 'Modal' }} />
         <Stack.Screen name="welcome" />
         <Stack.Screen name="auth" />
+        <Stack.Screen name="create-competition" />
+        <Stack.Screen name="competition-list" />
+        <Stack.Screen name="competition-matches" />
+        <Stack.Screen name="select-matches" />
+        <Stack.Screen name="select-friends" />
       </Stack>
     </ThemeProvider>
   );

@@ -1,14 +1,19 @@
-import { StyleSheet, View, Text } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useAuth } from '@/contexts/auth-context';
+import { router } from 'expo-router';
 
 export default function HomeScreen() {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const gradientColors = useThemeColor({}, 'gradientColors') as readonly [string, string, string];
+
+  const handleCreateCompetition = () => {
+    router.push('/create-competition');
+  };
 
   return (
     <>
@@ -35,6 +40,18 @@ export default function HomeScreen() {
                 Start recording your game scores and compete with friends
               </Text>
             </View>
+
+            <TouchableOpacity style={styles.competitionButton} onPress={handleCreateCompetition}>
+              <View style={styles.buttonContent}>
+                <Text style={styles.buttonTitle}>Create Friendly Competition</Text>
+                <Text style={styles.buttonDescription}>
+                  Select matches and invite friends to bet
+                </Text>
+              </View>
+              <View style={styles.buttonIcon}>
+                <Text style={styles.buttonIconText}>+</Text>
+              </View>
+            </TouchableOpacity>
 
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Recent Activity</Text>
@@ -100,6 +117,47 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: 'rgba(255, 255, 255, 0.8)',
     lineHeight: 24,
+    textDecorationLine: 'none',
+  },
+  competitionButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  buttonContent: {
+    flex: 1,
+  },
+  buttonTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 8,
+    textDecorationLine: 'none',
+  },
+  buttonDescription: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
+    lineHeight: 22,
+    textDecorationLine: 'none',
+  },
+  buttonIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 16,
+  },
+  buttonIconText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#ffffff',
     textDecorationLine: 'none',
   },
 });
