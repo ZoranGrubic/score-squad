@@ -82,21 +82,32 @@ export default function SelectFriendsScreen() {
 
     if (isSelected) {
       // Remove from selection
+      console.log('Removing friend:', friend.email);
       setSelectedFriendIds(prev => prev.filter(id => id !== friendId));
-      setSelectedFriends(selectedFriends.filter(f => f.id !== friendId));
+      const newSelectedFriends = selectedFriends.filter(f => f.id !== friendId);
+      setSelectedFriends(newSelectedFriends);
+      console.log('After removal, selectedFriends:', newSelectedFriends);
     } else {
       // Add to selection
+      console.log('Adding friend:', friend.email);
       setSelectedFriendIds(prev => [...prev, friendId]);
-      setSelectedFriends([...selectedFriends, friend]);
+      const newSelectedFriends = [...selectedFriends, friend];
+      setSelectedFriends(newSelectedFriends);
+      console.log('After addition, selectedFriends:', newSelectedFriends);
     }
   };
 
   const handleNext = () => {
+    console.log('HandleNext called with:');
+    console.log('- selectedFriends from context:', selectedFriends);
+    console.log('- selectedFriendIds local state:', selectedFriendIds);
+
     if (selectedFriends.length === 0) {
       Alert.alert('Error', 'Please select at least one friend');
       return;
     }
 
+    console.log('About to navigate back with selected friends:', selectedFriends);
     // Navigate back to create competition screen
     router.back();
   };

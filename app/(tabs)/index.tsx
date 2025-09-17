@@ -1,4 +1,4 @@
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +29,7 @@ export default function HomeScreen() {
   const gradientColors = useThemeColor({}, 'gradientColors') as readonly [string, string, string];
 
   const [participatingCompetitions, setParticipatingCompetitions] = useState<ParticipatingCompetition[]>([]);
+  const [pendingInvitations, setPendingInvitations] = useState<ParticipatingCompetition[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -40,8 +41,41 @@ export default function HomeScreen() {
     if (!user?.id) return;
 
     try {
-      // Get competitions where user is a participant
-      const { data, error } = await supabase
+      console.log('Fetching participating competitions for user:', user.id);
+      console.log('Full user object:', user);
+
+      // Get current auth user to compare
+      const { data: authUser } = await supabase.auth.getUser();
+      console.log('Auth user:', authUser.user?.id);
+      console.log('Auth user email:', authUser.user?.email);
+
+      // First, ensure the user exists in profiles table
+      const { data: existingProfile, error: profileCheckError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', user?.id)
+        .single();
+
+      if (profileCheckError && profileCheckError.code === 'PGRST116') {
+        // User doesn't exist in profiles, create them
+        console.log('Creating user profile...');
+        const { error: profileCreateError } = await supabase
+          .from('profiles')
+          .insert([{
+            id: user?.id,
+            email: user?.email || '',
+            full_name: user?.user_metadata?.full_name || null
+          }]);
+
+        if (profileCreateError) {
+          console.error('Error creating user profile:', profileCreateError);
+        } else {
+          console.log('User profile created successfully');
+        }
+      }
+
+      // Get competitions where user is a participant - separate invited and accepted
+      const { data: acceptedData, error: acceptedError } = await supabase
         .from('friendly_competition_participants')
         .select(`
           id,
@@ -55,7 +89,64 @@ export default function HomeScreen() {
           )
         `)
         .eq('user_id', user.id)
-        .in('status', ['invited', 'accepted']);
+        .eq('status', 'accepted');
+
+      const { data: invitedData, error: invitedError } = await supabase
+        .from('friendly_competition_participants')
+        .select(`
+          id,
+          competition_id,
+          status,
+          friendly_competitions (
+            id,
+            name,
+            status,
+            created_at
+          )
+        `)
+        .eq('user_id', user.id)
+        .eq('status', 'invited');
+
+      console.log('Accepted competitions data:', acceptedData);
+      console.log('Invited competitions data:', invitedData);
+
+      const data = acceptedData;
+      const error = acceptedError;
+
+      console.log('Participating competitions raw data:', { data, error, userId: user.id, dataCount: data?.length });
+
+      // Also check if there are any participants records at all for this user
+      const { data: allParticipants } = await supabase
+        .from('friendly_competition_participants')
+        .select('*')
+        .eq('user_id', user.id);
+
+      console.log('All participant records for this user:', allParticipants);
+
+      // Check if user exists in profiles
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      console.log('User profile exists:', userProfile);
+
+      // Check all participants in the system to see if our user is there somewhere
+      const { data: allParticipantsInSystem } = await supabase
+        .from('friendly_competition_participants')
+        .select('*');
+
+      console.log('All participants in system:', allParticipantsInSystem);
+      console.log('Looking for user_id:', user.id);
+
+      // Test without RLS - use service role to see raw data
+      const { data: directQuery } = await supabase
+        .from('friendly_competition_participants')
+        .select('*, friendly_competitions(*)')
+        .eq('user_id', user.id);
+
+      console.log('Direct query result:', directQuery);
 
       if (error) {
         console.error('Error fetching participating competitions:', error);
@@ -65,8 +156,12 @@ export default function HomeScreen() {
       // Get match and prediction counts for each competition
       const competitionsWithCounts = await Promise.all(
         (data || []).map(async (participation) => {
+          console.log('Processing participation:', participation);
           const competition = participation.friendly_competitions;
-          if (!competition) return null;
+          if (!competition) {
+            console.log('No competition found for participation:', participation);
+            return null;
+          }
 
           const [matchesResult, predictionsResult] = await Promise.all([
             supabase
@@ -80,7 +175,7 @@ export default function HomeScreen() {
               .eq('user_id', user.id)
           ]);
 
-          return {
+          const result = {
             id: participation.id,
             name: competition.name,
             status: competition.status,
@@ -89,11 +184,46 @@ export default function HomeScreen() {
             my_predictions_count: predictionsResult.count || 0,
             friendly_competitions: competition
           };
+
+          console.log('Processed competition:', result);
+          return result;
         })
       );
 
+      console.log('All processed competitions:', competitionsWithCounts);
       const filteredCompetitions = competitionsWithCounts.filter(Boolean) as ParticipatingCompetition[];
+      console.log('Filtered competitions:', filteredCompetitions);
       setParticipatingCompetitions(filteredCompetitions);
+
+      // Process invited competitions for pending invitations
+      if (invitedData && !invitedError) {
+        const invitedCompetitionsWithCounts = await Promise.all(
+          invitedData.map(async (participation) => {
+            const competition = participation.friendly_competitions;
+            if (!competition) return null;
+
+            const [matchesResult] = await Promise.all([
+              supabase
+                .from('friendly_competition_matches')
+                .select('id', { count: 'exact' })
+                .eq('competition_id', competition.id)
+            ]);
+
+            return {
+              id: participation.id,
+              name: competition.name,
+              status: competition.status,
+              created_at: competition.created_at,
+              matches_count: matchesResult.count || 0,
+              my_predictions_count: 0,
+              friendly_competitions: competition
+            };
+          })
+        );
+
+        const filteredInvitations = invitedCompetitionsWithCounts.filter(Boolean) as ParticipatingCompetition[];
+        setPendingInvitations(filteredInvitations);
+      }
     } catch (error) {
       console.error('Error:', error);
     } finally {
@@ -107,9 +237,6 @@ export default function HomeScreen() {
     fetchParticipatingCompetitions();
   };
 
-  const handleCreateCompetition = () => {
-    router.push('/create-competition');
-  };
 
   const handleCompetitionPress = (competition: ParticipatingCompetition) => {
     router.push({
@@ -119,6 +246,51 @@ export default function HomeScreen() {
         competitionName: competition.name
       }
     });
+  };
+
+  const handleAcceptInvitation = async (participation: ParticipatingCompetition) => {
+    console.log('Accepting invitation for participation:', participation.id);
+    try {
+      const { data, error } = await supabase
+        .from('friendly_competition_participants')
+        .update({ status: 'accepted' })
+        .eq('id', participation.id)
+        .select();
+
+      console.log('Accept invitation result:', { data, error });
+
+      if (error) {
+        console.error('Error accepting invitation:', error);
+        Alert.alert('Error', `Failed to accept invitation: ${error.message}`);
+        return;
+      }
+
+      console.log('Successfully accepted invitation, refreshing data...');
+      // Refresh the data
+      fetchParticipatingCompetitions();
+    } catch (error) {
+      console.error('Error:', error);
+      Alert.alert('Error', 'An unexpected error occurred');
+    }
+  };
+
+  const handleDeclineInvitation = async (participation: ParticipatingCompetition) => {
+    try {
+      const { error } = await supabase
+        .from('friendly_competition_participants')
+        .update({ status: 'declined' })
+        .eq('id', participation.id);
+
+      if (error) {
+        console.error('Error declining invitation:', error);
+        return;
+      }
+
+      // Refresh the data
+      fetchParticipatingCompetitions();
+    } catch (error) {
+      console.error('Error:', error);
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -157,18 +329,46 @@ export default function HomeScreen() {
               />
             }
           >
-            {/* Create Competition Button */}
-            <TouchableOpacity style={styles.competitionButton} onPress={handleCreateCompetition}>
-              <View style={styles.buttonContent}>
-                <Text style={styles.buttonTitle}>Create Friendly Competition</Text>
-                <Text style={styles.buttonDescription}>
-                  Select matches and invite friends to bet
-                </Text>
+
+            {/* Pending Invitations Section */}
+            {pendingInvitations.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Competition Invitations</Text>
+                {pendingInvitations.map((invitation) => (
+                  <View key={invitation.id} style={styles.invitationCard}>
+                    <View style={styles.competitionHeader}>
+                      <View style={styles.competitionInfo}>
+                        <Text style={styles.competitionName}>{invitation.name}</Text>
+                        <Text style={styles.competitionDate}>
+                          Invited: {formatDate(invitation.created_at)}
+                        </Text>
+                        <Text style={styles.competitionDate}>
+                          {invitation.matches_count} matches to predict
+                        </Text>
+                      </View>
+                      <View style={styles.invitationBadge}>
+                        <Text style={styles.invitationText}>INVITED</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.invitationActions}>
+                      <TouchableOpacity
+                        style={styles.acceptButton}
+                        onPress={() => handleAcceptInvitation(invitation)}
+                      >
+                        <Text style={styles.acceptButtonText}>Accept</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.declineButton}
+                        onPress={() => handleDeclineInvitation(invitation)}
+                      >
+                        <Text style={styles.declineButtonText}>Decline</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
               </View>
-              <View style={styles.buttonIcon}>
-                <Text style={styles.buttonIconText}>+</Text>
-              </View>
-            </TouchableOpacity>
+            )}
 
             {/* My Competitions Section */}
             <View style={styles.section}>
@@ -425,6 +625,63 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 16,
+    textDecorationLine: 'none',
+  },
+  invitationCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#FFD700',
+  },
+  invitationBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: '#FFD700',
+  },
+  invitationText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1a1a1a',
+    textDecorationLine: 'none',
+  },
+  invitationActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+  },
+  acceptButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    flex: 1,
+    marginRight: 8,
+  },
+  acceptButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
+    textAlign: 'center',
+    textDecorationLine: 'none',
+  },
+  declineButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    flex: 1,
+    marginLeft: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  declineButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
+    textAlign: 'center',
     textDecorationLine: 'none',
   },
 });

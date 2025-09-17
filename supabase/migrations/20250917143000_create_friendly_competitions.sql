@@ -16,9 +16,17 @@ CREATE TABLE public.friendly_competitions (
 -- Enable RLS for friendly_competitions
 ALTER TABLE public.friendly_competitions ENABLE ROW LEVEL SECURITY;
 
--- Basic RLS policies for friendly_competitions (will add participant check later)
+-- Basic RLS policies for friendly_competitions
 CREATE POLICY "Users can view own competitions" ON public.friendly_competitions
     FOR SELECT USING (auth.uid() = created_by);
+
+CREATE POLICY "Users can view competitions they participate in" ON public.friendly_competitions
+    FOR SELECT USING (
+        id IN (
+            SELECT competition_id FROM public.friendly_competition_participants
+            WHERE user_id = auth.uid()
+        )
+    );
 
 CREATE POLICY "Users can create competitions" ON public.friendly_competitions
     FOR INSERT WITH CHECK (auth.uid() = created_by);

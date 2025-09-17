@@ -32,6 +32,12 @@ export default function CreateCompetitionScreen() {
   };
 
   const handleCreateCompetition = async () => {
+    console.log('Creating competition with:');
+    console.log('- Competition name:', competitionName);
+    console.log('- Selected matches:', selectedMatches.length);
+    console.log('- Selected friends:', selectedFriends.length);
+    console.log('- Selected friends data:', selectedFriends);
+
     if (!competitionName.trim()) {
       Alert.alert('Error', 'Please enter a competition name');
       return;
@@ -105,7 +111,33 @@ export default function CreateCompetitionScreen() {
         return;
       }
 
+      // Ensure all selected friends exist in profiles table
+      for (const friend of selectedFriends) {
+        const { data: existingFriendProfile, error: friendCheckError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', friend.id)
+          .single();
+
+        // If friend doesn't have a profile, they might be from an old auth.users record
+        // We'll still add them as participants - their profile will be created when they log in
+        if (friendCheckError && friendCheckError.code === 'PGRST116') {
+          console.log(`Friend ${friend.email} doesn't have a profile yet, but adding as participant`);
+        }
+      }
+
       // Add selected friends as participants
+      console.log('About to create participant inserts for friends:', selectedFriends);
+
+      // Detailed logging of each friend
+      selectedFriends.forEach((friend, index) => {
+        console.log(`Friend ${index + 1}:`, {
+          id: friend.id,
+          email: friend.email,
+          full_name: friend.full_name
+        });
+      });
+
       const participantInserts = selectedFriends.map(friend => ({
         competition_id: competition.id,
         user_id: friend.id,
@@ -113,14 +145,38 @@ export default function CreateCompetitionScreen() {
         status: 'invited'
       }));
 
-      const { error: participantsError } = await supabase
+      // Add the creator as a participant too (auto-accepted)
+      console.log('Adding creator as participant with user ID:', user?.id);
+      participantInserts.push({
+        competition_id: competition.id,
+        user_id: user?.id,
+        invited_by: user?.id,
+        status: 'accepted'
+      });
+
+      console.log('Final participant inserts array:', participantInserts);
+      console.log('Total participants to insert:', participantInserts.length);
+
+      const { data: insertedParticipants, error: participantsError } = await supabase
         .from('friendly_competition_participants')
-        .insert(participantInserts);
+        .insert(participantInserts)
+        .select();
+
+      console.log('Participants insert result:');
+      console.log('- Error:', participantsError);
+      console.log('- Inserted participants:', insertedParticipants);
+      console.log('- Expected count:', participantInserts.length);
+      console.log('- Actual count:', insertedParticipants?.length || 0);
 
       if (participantsError) {
-        console.error('Error adding participants:', participantsError);
-        Alert.alert('Error', 'Failed to add participants to competition');
+        console.error('Detailed participants error:', participantsError);
+        Alert.alert('Error', `Failed to add participants: ${participantsError.message}`);
         return;
+      }
+
+      if (!insertedParticipants || insertedParticipants.length !== participantInserts.length) {
+        console.error('Mismatch in inserted participants count');
+        Alert.alert('Warning', 'Some participants may not have been added correctly');
       }
 
       // Success!
