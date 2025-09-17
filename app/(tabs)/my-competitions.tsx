@@ -138,14 +138,14 @@ export default function MyCompetitionsScreen() {
         <View style={[styles.content, { paddingTop: Math.max(insets.top, 20) + 20 }]}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>My Competitions</Text>
+            <Text style={styles.title}>Created Competitions</Text>
             <TouchableOpacity style={styles.createButton} onPress={handleCreateCompetition}>
               <Text style={styles.createButtonText}>+</Text>
             </TouchableOpacity>
           </View>
 
           <Text style={styles.subtitle}>
-            Manage your friendly competitions and track results
+            Manage competitions you've created and track results
           </Text>
 
           {/* Competitions List */}

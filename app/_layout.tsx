@@ -50,6 +50,7 @@ function AppContent() {
         <Stack.Screen name="competition-list" />
         <Stack.Screen name="competition-matches" />
         <Stack.Screen name="competition-details" />
+        <Stack.Screen name="participate-competition" />
         <Stack.Screen name="select-matches" />
         <Stack.Screen name="select-friends" />
       </Stack>
