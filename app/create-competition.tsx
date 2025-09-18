@@ -1,13 +1,15 @@
-import { StyleSheet, View, Text, TouchableOpacity, TextInput, Alert } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useThemeColor } from '@/hooks/use-theme-color';
-import { router } from 'expo-router';
-import { useState } from 'react';
-import { useCompetition } from '@/contexts/competition-context';
-import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/auth-context';
+import { useCompetition } from '@/contexts/competition-context';
+import { useThemeColor } from '@/hooks/use-theme-color';
+import { supabase } from '@/lib/supabase';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { useState, useEffect } from 'react';
+import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback } from 'react';
 
 export default function CreateCompetitionScreen() {
   const insets = useSafeAreaInsets();
@@ -21,6 +23,19 @@ export default function CreateCompetitionScreen() {
     clearAll
   } = useCompetition();
   const [loading, setLoading] = useState(false);
+  const [competitionCreated, setCompetitionCreated] = useState(false);
+
+  // Clear context only when completely leaving create flow without creating
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        // This runs when screen loses focus (user navigates away)
+        // Don't clear context when navigating to select screens within create flow
+        // Only clear when abandoning the entire create process
+        console.log('CREATE SCREEN losing focus - NOT clearing context to preserve selections');
+      };
+    }, [competitionCreated, clearAll])
+  );
 
 
   const handleSelectMatches = () => {
@@ -153,9 +168,9 @@ export default function CreateCompetitionScreen() {
       // First, verify the competition exists and we have proper access
       console.log('Verifying competition exists and checking creator access...');
       const { data: verifyCompetition, error: verifyError } = await supabase
-        .from('friendly_competitions')
+        .from('friendly_competitionss')
         .select('id, created_by')
-        .eq('id', competition.id)
+        .eq('i d', competition.id)
         .eq('created_by', user?.id)
         .single();
 
@@ -244,6 +259,7 @@ export default function CreateCompetitionScreen() {
       if (errorCount > 0) {
         console.error('Not all participants were added successfully');
         const failedList = errors.join('\n');
+        setCompetitionCreated(true); // Mark as created so context won't be cleared
         Alert.alert(
           'Partial Success',
           `Competition created successfully!\n\n${successCount} participants added, ${errorCount} failed.\n\nFailed:\n${failedList}`,
@@ -259,6 +275,7 @@ export default function CreateCompetitionScreen() {
         );
       } else {
         // Full success!
+        setCompetitionCreated(true); // Mark as created so context won't be cleared
         Alert.alert(
           'Success!',
           `Competition "${competitionName}" created successfully with ${selectedMatches.length} matches and ${successCount} participants!`,
@@ -283,6 +300,9 @@ export default function CreateCompetitionScreen() {
   };
 
   const handleBack = () => {
+    // Clear context when leaving create flow without creating
+    console.log('CREATE SCREEN - Going back, clearing context');
+    clearAll();
     router.back();
   };
 

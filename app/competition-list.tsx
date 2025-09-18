@@ -1,12 +1,15 @@
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Image } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '@/lib/supabase';
 import { useCompetition } from '@/contexts/competition-context';
+import { CustomAlert } from '@/components/custom-alert';
+import { useCustomAlert } from '@/hooks/use-custom-alert';
 
 interface Competition {
   id: string;
@@ -21,11 +24,12 @@ interface Competition {
 export default function CompetitionListScreen() {
   const insets = useSafeAreaInsets();
   const gradientColors = useThemeColor({}, 'gradientColors') as readonly [string, string, string];
-  const { selectedMatches } = useCompetition();
+  const { selectedMatches, clearAll } = useCompetition();
   const { editingCompetition } = useLocalSearchParams<{ editingCompetition?: string }>();
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
+  const { alertState, showAlert, hideAlert } = useCustomAlert();
 
   useEffect(() => {
     if (editingCompetition) {
@@ -33,6 +37,23 @@ export default function CompetitionListScreen() {
     }
     fetchCompetitions();
   }, [selectedMatches, editingCompetition]);
+
+  // Additional effect to refresh when selectedMatches changes in edit mode
+  useEffect(() => {
+    if (isEditing && selectedMatches.length > 0) {
+      console.log('EDIT MODE - Detected selectedMatches change, refreshing competitions');
+      fetchCompetitions();
+    }
+  }, [selectedMatches.length, isEditing]);
+
+  // Refresh data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log(`FOCUS EFFECT - ${isEditing ? 'EDIT' : 'CREATE'} MODE - Refreshing competitions list`);
+      console.log('Current selected matches in context:', selectedMatches.length);
+      fetchCompetitions();
+    }, [isEditing, selectedMatches])
+  );
 
   const fetchCompetitions = async () => {
     try {
@@ -43,42 +64,78 @@ export default function CompetitionListScreen() {
 
       if (error) {
         console.error('Error fetching competitions:', error);
-        Alert.alert('Error', 'Unable to load competitions');
+        showAlert('Error', 'Unable to load competitions');
         return;
       }
 
-      setCompetitions((data || []).map(comp => ({
-        ...comp,
-        selectedMatchesCount: selectedMatches.filter(m => m.competition_id === comp.id).length
-      })));
+      const competitionsWithCounts = (data || []).map(comp => {
+        const matchCount = selectedMatches.filter(m => m.competition_id === comp.id).length;
+
+        if (matchCount > 0) {
+          const mode = isEditing ? 'EDIT' : 'CREATE';
+          console.log(`${mode} MODE - Competition ${comp.name}: ${matchCount} matches selected`);
+        }
+
+        return {
+          ...comp,
+          selectedMatchesCount: matchCount
+        };
+      });
+
+      const mode = isEditing ? 'EDIT' : 'CREATE';
+      console.log(`${mode} MODE - FETCH COMPETITIONS - Selected matches in context:`, selectedMatches.length);
+
+      setCompetitions(competitionsWithCounts);
     } catch (error) {
       console.error('Error:', error);
-      Alert.alert('Error', 'An error occurred');
+      showAlert('Error', 'An error occurred');
     } finally {
       setLoading(false);
     }
   };
 
   const handleCompetitionPress = (competition: Competition) => {
+    const params: any = {
+      competitionId: competition.id,
+      competitionName: competition.name
+    };
+
+    // Pass editingCompetition if we're in edit mode
+    if (isEditing && editingCompetition) {
+      params.editingCompetition = editingCompetition;
+    }
+
     router.push({
       pathname: '/competition-matches',
-      params: {
-        competitionId: competition.id,
-        competitionName: competition.name
-      }
+      params
     });
   };
 
   const handleBack = () => {
+    // If in CREATE mode and going back, clear context
+    if (!isEditing) {
+      console.log('CREATE MODE - Going back from competition-list, clearing context');
+      // Clear selections since we're abandoning the create flow
+      clearAll();
+    }
     router.back();
   };
 
   const handleDone = async () => {
-    if (selectedMatches.length === 0) {
-      Alert.alert('Error', 'Please select at least one match');
+    // In EDIT mode, there's no "done" action - changes are applied immediately
+    if (isEditing) {
+      console.log('EDIT MODE - No done action needed, going back');
+      router.back();
       return;
     }
 
+    // CREATE mode validation
+    if (selectedMatches.length === 0) {
+      showAlert('Error', 'Please select at least one match');
+      return;
+    }
+
+    // This should never happen now since we return early for edit mode
     if (isEditing && editingCompetition) {
       // Add new matches to existing competition
       try {
@@ -90,7 +147,7 @@ export default function CompetitionListScreen() {
 
         if (fetchError) {
           console.error('Error fetching existing matches:', fetchError);
-          Alert.alert('Error', 'Failed to fetch existing matches');
+          showAlert('Error', 'Failed to fetch existing matches');
           return;
         }
 
@@ -98,7 +155,7 @@ export default function CompetitionListScreen() {
         const newMatches = selectedMatches.filter(match => !existingMatchIds.includes(match.id));
 
         if (newMatches.length === 0) {
-          Alert.alert('Info', 'All selected matches are already in this competition');
+          showAlert('Info', 'All selected matches are already in this competition');
           router.back();
           return;
         }
@@ -115,15 +172,15 @@ export default function CompetitionListScreen() {
 
         if (insertError) {
           console.error('Error adding matches:', insertError);
-          Alert.alert('Error', 'Failed to add matches to competition');
+          showAlert('Error', 'Failed to add matches to competition');
           return;
         }
 
-        Alert.alert('Success', `Added ${newMatches.length} new matches to competition!`);
+        showAlert('Success', `Added ${newMatches.length} new matches to competition!`);
         router.back();
       } catch (error) {
         console.error('Error:', error);
-        Alert.alert('Error', 'An error occurred');
+        showAlert('Error', 'An error occurred');
       }
     } else {
       // Navigate back to create competition screen
@@ -132,7 +189,21 @@ export default function CompetitionListScreen() {
   };
 
   const getTotalSelectedMatches = () => {
+    if (isEditing) {
+      // In EDIT mode, we don't track global count
+      return 0;
+    }
+    // In CREATE mode, count all selected matches
     return selectedMatches.length;
+  };
+
+  const getCreateModeText = () => {
+    const total = getTotalSelectedMatches();
+    return `Total selected: ${total} ${total === 1 ? 'match' : 'matches'}`;
+  };
+
+  const getEditModeText = () => {
+    return 'Select additional matches to add';
   };
 
   return (
@@ -161,7 +232,7 @@ export default function CompetitionListScreen() {
           {/* Total Count */}
           <View style={styles.countContainer}>
             <Text style={styles.countText}>
-              Total selected: {getTotalSelectedMatches()} {getTotalSelectedMatches() === 1 ? 'match' : 'matches'}
+              {isEditing ? getEditModeText() : getCreateModeText()}
             </Text>
           </View>
 
@@ -199,7 +270,7 @@ export default function CompetitionListScreen() {
                       <Text style={styles.competitionCountry}>
                         {competition.code || competition.type}
                         {competition.selectedMatchesCount > 0 &&
-                          ` • ${competition.selectedMatchesCount} selected matches`
+                          ` • ✓ ${competition.selectedMatchesCount} selected`
                         }
                       </Text>
                     </View>
@@ -212,17 +283,26 @@ export default function CompetitionListScreen() {
 
           {/* Done Button */}
           <TouchableOpacity
-            style={[styles.doneButton, getTotalSelectedMatches() === 0 && styles.disabledButton]}
+            style={[styles.doneButton, !isEditing && getTotalSelectedMatches() === 0 && styles.disabledButton]}
             onPress={handleDone}
-            disabled={getTotalSelectedMatches() === 0}
+            disabled={!isEditing && getTotalSelectedMatches() === 0}
           >
-            <Text style={[styles.doneButtonText, getTotalSelectedMatches() === 0 && styles.disabledButtonText]}>
-              {isEditing ? `Add Matches (${getTotalSelectedMatches()})` : `Done (${getTotalSelectedMatches()})`}
+            <Text style={[styles.doneButtonText, !isEditing && getTotalSelectedMatches() === 0 && styles.disabledButtonText]}>
+              {isEditing ? 'Done Editing' : `Done (${getTotalSelectedMatches()})`}
             </Text>
           </TouchableOpacity>
 
           <View style={{ paddingBottom: Math.max(insets.bottom, 20) }} />
         </View>
+
+        {/* Custom Alert */}
+        <CustomAlert
+          visible={alertState.visible}
+          title={alertState.title}
+          message={alertState.message}
+          buttons={alertState.buttons}
+          onClose={hideAlert}
+        />
       </LinearGradient>
     </>
   );
@@ -303,8 +383,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   selectedItem: {
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+    backgroundColor: 'rgba(76, 175, 80, 0.2)',
+    borderColor: 'rgba(76, 175, 80, 0.6)',
+    borderWidth: 2,
   },
   competitionInfo: {
     flexDirection: 'row',

@@ -27,7 +27,7 @@ export default function WelcomeScreen() {
         colors={gradientColors}
         style={styles.container}
         start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+        end={{ x: 5, y: 3 }}
       >
         <View style={[styles.content, { paddingTop: Math.max(insets.top, 20) }]}>
           {/* Center Message */}

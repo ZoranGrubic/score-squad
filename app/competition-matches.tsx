@@ -1,4 +1,4 @@
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Image } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,6 +7,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useCompetition } from '@/contexts/competition-context';
+import { CustomAlert } from '@/components/custom-alert';
+import { useCustomAlert } from '@/hooks/use-custom-alert';
 
 interface Match {
   id: string;
@@ -32,24 +34,110 @@ interface Match {
 export default function CompetitionMatchesScreen() {
   const insets = useSafeAreaInsets();
   const gradientColors = useThemeColor({}, 'gradientColors') as readonly [string, string, string];
-  const { competitionId, competitionName } = useLocalSearchParams<{
+  const { competitionId, competitionName, editingCompetition } = useLocalSearchParams<{
     competitionId: string;
     competitionName: string;
+    editingCompetition?: string;
   }>();
-  const { selectedMatches, setSelectedMatches } = useCompetition();
+  const { selectedMatches, setSelectedMatches, clearAll } = useCompetition();
 
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
+  const [existingMatchIds, setExistingMatchIds] = useState<string[]>([]);
+  const [isEditing, setIsEditing] = useState(false);
+  const { alertState, showAlert, hideAlert } = useCustomAlert();
 
   useEffect(() => {
-    // Set current selected matches from context
-    setSelectedMatchIds(selectedMatches.map(m => m.id));
+    if (editingCompetition) {
+      // EDIT MODE: Load existing matches from friendly competition
+      initializeEditMode();
+    } else {
+      // CREATE MODE: Use context to show selected matches
+      initializeCreateMode();
+    }
 
+    // Always fetch matches for this competition
     if (competitionId) {
       fetchMatches();
     }
-  }, [competitionId, selectedMatches]);
+  }, [competitionId, editingCompetition]);
+
+  // Only for CREATE mode - update when context changes
+  useEffect(() => {
+    if (!isEditing && !editingCompetition) {
+      setSelectedMatchIds(selectedMatches.map(m => m.id));
+    }
+  }, [selectedMatches, isEditing, editingCompetition]);
+
+  const initializeCreateMode = () => {
+    console.log('=== INITIALIZING CREATE MODE ===');
+    setIsEditing(false);
+    setExistingMatchIds([]);
+
+    // Set selected matches from context (user's selections)
+    const contextMatchIds = selectedMatches
+      .filter(m => m.competition_id === competitionId)
+      .map(m => m.id);
+
+    setSelectedMatchIds(contextMatchIds);
+    console.log('CREATE MODE - Set selected from context:', contextMatchIds.length, 'matches');
+  };
+
+  const initializeEditMode = async () => {
+    console.log('=== INITIALIZING EDIT MODE ===');
+    setIsEditing(true);
+
+    // Clear context first, then load existing matches into it for UI display
+    setSelectedMatches([]);
+    console.log('EDIT MODE - Cleared context, will load existing matches for UI');
+
+    // Load existing matches from database AND populate context for UI
+    await loadExistingMatches();
+  };
+
+  const loadExistingMatches = async () => {
+    if (!editingCompetition) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('friendly_competition_matches')
+        .select(`
+          match_id,
+          matches (
+            id,
+            external_id,
+            competition_id,
+            status,
+            match_date,
+            stage,
+            home_team:home_team_id(id, name, short_name, crest),
+            away_team:away_team_id(id, name, short_name, crest)
+          )
+        `)
+        .eq('competition_id', editingCompetition);
+
+      if (error) {
+        console.error('Error fetching existing matches:', error);
+        return;
+      }
+
+      const existingMatches = (data || [])
+        .map(item => item.matches)
+        .filter(Boolean) as Match[];
+
+      const existingIds = existingMatches.map(m => m.id);
+
+      setExistingMatchIds(existingIds);
+      setSelectedMatchIds(existingIds);
+
+      // ADD existing matches to context for UI display (competition-list should show counts)
+      setSelectedMatches(existingMatches);
+      console.log('EDIT MODE - Loaded', existingIds.length, 'existing matches, added to context for UI display');
+    } catch (error) {
+      console.error('Error loading existing matches:', error);
+    }
+  };
 
   const fetchMatches = async () => {
     try {
@@ -66,38 +154,166 @@ export default function CompetitionMatchesScreen() {
 
       if (error) {
         console.error('Error fetching matches:', error);
-        Alert.alert('Error', 'Unable to load matches');
+        showAlert('Error', 'Unable to load matches');
         return;
       }
 
       setMatches(data || []);
     } catch (error) {
       console.error('Error:', error);
-      Alert.alert('Error', 'An error occurred');
+      showAlert('Error', 'An error occurred');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleMatchToggle = (matchId: string) => {
+  const handleMatchToggle = async (matchId: string) => {
+    if (isEditing) {
+      await handleEditModeToggle(matchId);
+    } else {
+      handleCreateModeToggle(matchId);
+    }
+  };
+
+  const handleCreateModeToggle = (matchId: string) => {
     const match = matches.find(m => m.id === matchId);
     if (!match) return;
 
     const isSelected = selectedMatchIds.includes(matchId);
 
     if (isSelected) {
-      // Remove from selection
+      // REMOVE from selection in CREATE mode
       setSelectedMatchIds(prev => prev.filter(id => id !== matchId));
-      setSelectedMatches(selectedMatches.filter(m => m.id !== matchId));
+      setSelectedMatches(prev => {
+        const newMatches = prev.filter(m => m.id !== matchId);
+        console.log('CREATE MODE - REMOVED match, context now has:', newMatches.length, 'matches');
+        return newMatches;
+      });
     } else {
-      // Add to selection
+      // ADD to selection in CREATE mode
       setSelectedMatchIds(prev => [...prev, matchId]);
-      setSelectedMatches([...selectedMatches, match]);
+      setSelectedMatches(prev => {
+        const newMatches = [...prev, match];
+        console.log('CREATE MODE - ADDED match, context now has:', newMatches.length, 'matches');
+        console.log('Match added:', match.id, 'from competition:', match.competition_id);
+        return newMatches;
+      });
+    }
+  };
+
+  const handleEditModeToggle = async (matchId: string) => {
+    const match = matches.find(m => m.id === matchId);
+    if (!match) return;
+
+    const matchHasStarted = match.match_date * 1000 < Date.now();
+    const isExistingMatch = existingMatchIds.includes(matchId);
+
+    // Don't allow removal of matches that have started
+    if (isExistingMatch && matchHasStarted) {
+      showAlert('Cannot Remove', 'Matches that have already started cannot be removed from the competition.');
+      return;
+    }
+
+    const isSelected = selectedMatchIds.includes(matchId);
+
+    if (isSelected) {
+      // REMOVE from competition in EDIT mode
+      if (isExistingMatch) {
+        const success = await removeMatchFromCompetition(matchId);
+        if (!success) return;
+      }
+
+      setSelectedMatchIds(prev => prev.filter(id => id !== matchId));
+      // Also remove from context for UI consistency
+      setSelectedMatches(prev => prev.filter(m => m.id !== matchId));
+      console.log('EDIT MODE - REMOVED match from database and context:', matchId);
+    } else {
+      // ADD to competition in EDIT mode - save immediately to database
+      const success = await addMatchToCompetition(matchId);
+      if (success) {
+        setSelectedMatchIds(prev => [...prev, matchId]);
+        setExistingMatchIds(prev => [...prev, matchId]);
+        // Also add to context for UI consistency
+        setSelectedMatches(prev => [...prev, match]);
+        console.log('EDIT MODE - ADDED match to database and context:', matchId);
+      }
+    }
+
+    // IMPORTANT: In edit mode, context is updated for UI consistency
+    // But all database changes are applied immediately
+  };
+
+  const removeMatchFromCompetition = async (matchId: string): Promise<boolean> => {
+    if (!editingCompetition) return false;
+
+    try {
+      const { error } = await supabase
+        .from('friendly_competition_matches')
+        .delete()
+        .eq('competition_id', editingCompetition)
+        .eq('match_id', matchId);
+
+      if (error) {
+        console.error('Error removing match from competition:', error);
+        showAlert('Error', 'Failed to remove match from competition');
+        return false;
+      }
+
+      // Update existing match IDs
+      setExistingMatchIds(prev => prev.filter(id => id !== matchId));
+      console.log('Match removed from competition successfully');
+      return true;
+    } catch (error) {
+      console.error('Error:', error);
+      showAlert('Error', 'An error occurred while removing the match');
+      return false;
+    }
+  };
+
+  const addMatchToCompetition = async (matchId: string): Promise<boolean> => {
+    if (!editingCompetition) return false;
+
+    try {
+      const { error } = await supabase
+        .from('friendly_competition_matches')
+        .insert([{
+          competition_id: editingCompetition,
+          match_id: matchId
+        }]);
+
+      if (error) {
+        console.error('Error adding match to competition:', error);
+        showAlert('Error', 'Failed to add match to competition');
+        return false;
+      }
+
+      console.log('Successfully added match to competition:', matchId);
+      return true;
+    } catch (error) {
+      console.error('Error:', error);
+      showAlert('Error', 'An error occurred while adding the match');
+      return false;
     }
   };
 
   const handleBack = () => {
-    // Navigate back to competition list
+    if (isEditing) {
+      handleEditModeBack();
+    } else {
+      handleCreateModeBack();
+    }
+  };
+
+  const handleCreateModeBack = () => {
+    // In CREATE mode, keep selections in context UNLESS we're completely backing out
+    // For now, keep selections so user can go back to competition-list and see counts
+    console.log('CREATE MODE - Going back, keeping', selectedMatches.length, 'matches in context');
+    router.back();
+  };
+
+  const handleEditModeBack = () => {
+    // In EDIT mode, keep context for UI display (shows match counts in competition list)
+    console.log('EDIT MODE - Going back, keeping context for UI display');
     router.back();
   };
 
@@ -157,9 +373,13 @@ export default function CompetitionMatchesScreen() {
                   key={match.id}
                   style={[
                     styles.matchItem,
-                    selectedMatchIds.includes(match.id) && styles.selectedMatch
+                    // Selected state - for all selected matches (both create and edit mode)
+                    selectedMatchIds.includes(match.id) && styles.selectedMatch,
+                    // Locked state - for matches that have started in edit mode (overrides selected style)
+                    isEditing && existingMatchIds.includes(match.id) && match.match_date * 1000 < Date.now() && styles.lockedMatch
                   ]}
                   onPress={() => handleMatchToggle(match.id)}
+                  disabled={isEditing && existingMatchIds.includes(match.id) && match.match_date * 1000 < Date.now()}
                 >
                   <View style={styles.matchHeader}>
                     <Text style={styles.matchDate}>
@@ -171,9 +391,16 @@ export default function CompetitionMatchesScreen() {
                         minute: '2-digit'
                       })}
                     </Text>
-                    {selectedMatchIds.includes(match.id) && (
-                      <Text style={styles.checkmark}>✓</Text>
-                    )}
+                    <View style={styles.statusContainer}>
+                      {/* Show checkmark for all selected matches */}
+                      {selectedMatchIds.includes(match.id) && (
+                        <Text style={styles.checkmark}>✓</Text>
+                      )}
+                      {/* Show lock icon for started matches in edit mode */}
+                      {isEditing && existingMatchIds.includes(match.id) && match.match_date * 1000 < Date.now() && (
+                        <Text style={styles.lockedMatchLabel}>🔒</Text>
+                      )}
+                    </View>
                   </View>
 
                   <View style={styles.teamsContainer}>
@@ -222,6 +449,15 @@ export default function CompetitionMatchesScreen() {
 
           <View style={{ paddingBottom: Math.max(insets.bottom, 20) }} />
         </View>
+
+        {/* Custom Alert */}
+        <CustomAlert
+          visible={alertState.visible}
+          title={alertState.title}
+          message={alertState.message}
+          buttons={alertState.buttons}
+          onClose={hideAlert}
+        />
       </LinearGradient>
     </>
   );
@@ -403,5 +639,33 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
     textDecorationLine: 'none',
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  existingMatchLabel: {
+    fontSize: 12,
+    color: '#4CAF50',
+    fontWeight: '600',
+    backgroundColor: 'rgba(76, 175, 80, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    textDecorationLine: 'none',
+  },
+  lockedMatchLabel: {
+    fontSize: 14,
+    textDecorationLine: 'none',
+  },
+  existingMatch: {
+    backgroundColor: 'rgba(76, 175, 80, 0.15)',
+    borderColor: 'rgba(76, 175, 80, 0.4)',
+  },
+  lockedMatch: {
+    backgroundColor: 'rgba(158, 158, 158, 0.2)',
+    borderColor: 'rgba(158, 158, 158, 0.3)',
+    opacity: 0.7,
   },
 });

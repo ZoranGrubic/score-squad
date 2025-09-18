@@ -55,10 +55,13 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
   const [selectedCompetitions, setSelectedCompetitions] = useState<Competition[]>([]);
 
   const clearAll = () => {
+    console.log('=== CLEARING ALL CONTEXT DATA ===');
+    console.log('Before clear - selectedMatches:', selectedMatches.length);
     setCompetitionName('');
     setSelectedMatches([]);
     setSelectedFriends([]);
     setSelectedCompetitions([]);
+    console.log('=== CONTEXT CLEARED ===');
   };
 
   return (

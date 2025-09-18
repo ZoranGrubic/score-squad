@@ -4,7 +4,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/auth-context';
 import { CustomAlert } from '@/components/custom-alert';
@@ -76,6 +77,15 @@ export default function CompetitionDetailsScreen() {
       fetchCompetitionDetails();
     }
   }, [competitionId]);
+
+  // Refresh data when screen comes into focus (after editing matches)
+  useFocusEffect(
+    useCallback(() => {
+      if (competitionId) {
+        fetchCompetitionDetails();
+      }
+    }, [competitionId])
+  );
 
   const fetchCompetitionDetails = async () => {
     try {
