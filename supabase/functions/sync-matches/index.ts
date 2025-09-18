@@ -27,6 +27,18 @@ interface Match {
     tla: string;
     crest: string;
   };
+  score?: {
+    winner?: string;
+    duration?: string;
+    fullTime?: {
+      home?: number;
+      away?: number;
+    };
+    halfTime?: {
+      home?: number;
+      away?: number;
+    };
+  };
 }
 
 interface MatchesResponse {
@@ -180,6 +192,20 @@ serve(async (req) => {
               console.log(`Away team not found in database: ${match.awayTeam.name} (ID: ${match.awayTeam.id})`)
             }
 
+            // Extract score data if available
+            let scoreData = {}
+            if (match.score) {
+              scoreData = {
+                home_score: match.score.fullTime?.home || null,
+                away_score: match.score.fullTime?.away || null,
+                home_halftime_score: match.score.halfTime?.home || null,
+                away_halftime_score: match.score.halfTime?.away || null,
+                winner: match.score.winner || null,
+                match_duration: match.score.duration || null,
+                score_updated_at: new Date().toISOString(),
+              }
+            }
+
             const matchData = {
               external_id: match.id,
               competition_id: competition.id,
@@ -188,19 +214,35 @@ serve(async (req) => {
               stage: match.stage,
               home_team_id: homeTeam?.id || null,
               away_team_id: awayTeam?.id || null,
+              ...scoreData,
             }
 
             if (existingMatch) {
               // Update existing match
+              const updateData = {
+                status: matchData.status,
+                match_date: matchData.match_date,
+                stage: matchData.stage,
+                home_team_id: matchData.home_team_id,
+                away_team_id: matchData.away_team_id,
+              }
+
+              // Include score data if available
+              if (match.score) {
+                Object.assign(updateData, {
+                  home_score: matchData.home_score,
+                  away_score: matchData.away_score,
+                  home_halftime_score: matchData.home_halftime_score,
+                  away_halftime_score: matchData.away_halftime_score,
+                  winner: matchData.winner,
+                  match_duration: matchData.match_duration,
+                  score_updated_at: matchData.score_updated_at,
+                })
+              }
+
               const { error: updateError } = await supabaseClient
                 .from('matches')
-                .update({
-                  status: matchData.status,
-                  match_date: matchData.match_date,
-                  stage: matchData.stage,
-                  home_team_id: matchData.home_team_id,
-                  away_team_id: matchData.away_team_id,
-                })
+                .update(updateData)
                 .eq('external_id', match.id)
 
               if (updateError) {

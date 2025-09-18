@@ -1,10 +1,12 @@
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Image, TextInput, Modal } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Image, TextInput, Modal } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect } from 'react';
+import { CustomAlert } from '@/components/custom-alert';
+import { useCustomAlert } from '@/hooks/use-custom-alert';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/auth-context';
 
@@ -13,6 +15,9 @@ interface Match {
   external_id: number;
   status: string;
   match_date: number;
+  home_score?: number;
+  away_score?: number;
+  winner?: string;
   home_team?: {
     id: string;
     name: string;
@@ -52,6 +57,7 @@ export default function ParticipateCompetitionScreen() {
   const [predictionModalVisible, setPredictionModalVisible] = useState(false);
   const [homeScore, setHomeScore] = useState('');
   const [awayScore, setAwayScore] = useState('');
+  const { alertState, showAlert, hideAlert } = useCustomAlert();
 
   useEffect(() => {
     if (competitionId) {
@@ -70,6 +76,9 @@ export default function ParticipateCompetitionScreen() {
             external_id,
             status,
             match_date,
+            home_score,
+            away_score,
+            winner,
             home_team:home_team_id(id, name, short_name, crest),
             away_team:away_team_id(id, name, short_name, crest)
           )
@@ -78,7 +87,7 @@ export default function ParticipateCompetitionScreen() {
 
       if (matchesError) {
         console.error('Error fetching matches:', matchesError);
-        Alert.alert('Error', 'Unable to load matches');
+        showAlert('Error', 'Unable to load matches');
         return;
       }
 
@@ -104,7 +113,7 @@ export default function ParticipateCompetitionScreen() {
 
     } catch (error) {
       console.error('Error:', error);
-      Alert.alert('Error', 'An error occurred');
+      showAlert('Error', 'An error occurred');
     } finally {
       setLoading(false);
     }
@@ -130,7 +139,7 @@ export default function ParticipateCompetitionScreen() {
     const awayScoreNum = parseInt(awayScore);
 
     if (isNaN(homeScoreNum) || isNaN(awayScoreNum) || homeScoreNum < 0 || awayScoreNum < 0) {
-      Alert.alert('Error', 'Please enter valid scores (0 or higher)');
+      showAlert('Error', 'Please enter valid scores (0 or higher)');
       return;
     }
 
@@ -158,7 +167,7 @@ export default function ParticipateCompetitionScreen() {
 
         if (error) {
           console.error('Error updating prediction:', error);
-          Alert.alert('Error', 'Failed to update prediction');
+          showAlert('Error', 'Failed to update prediction');
           return;
         }
       } else {
@@ -176,7 +185,7 @@ export default function ParticipateCompetitionScreen() {
 
         if (error) {
           console.error('Error creating prediction:', error);
-          Alert.alert('Error', 'Failed to save prediction');
+          showAlert('Error', 'Failed to save prediction');
           return;
         }
       }
@@ -199,10 +208,10 @@ export default function ParticipateCompetitionScreen() {
       setHomeScore('');
       setAwayScore('');
 
-      Alert.alert('Success', 'Prediction saved successfully!');
+      showAlert('Success', 'Prediction saved successfully!');
     } catch (error) {
       console.error('Error:', error);
-      Alert.alert('Error', 'An error occurred');
+      showAlert('Error', 'An error occurred');
     }
   };
 
@@ -324,13 +333,15 @@ export default function ParticipateCompetitionScreen() {
                       </View>
 
                       <View style={styles.scoreContainer}>
-                        {prediction ? (
+                        {match.status === 'FINISHED' && match.home_score !== null && match.away_score !== null ? (
+                          // Show actual match score only for finished matches with real scores
                           <>
-                            <Text style={styles.predictionScore}>{prediction.home_score}</Text>
+                            <Text style={styles.actualScore}>{match.home_score}</Text>
                             <Text style={styles.versus}>-</Text>
-                            <Text style={styles.predictionScore}>{prediction.away_score}</Text>
+                            <Text style={styles.actualScore}>{match.away_score}</Text>
                           </>
                         ) : (
+                          // Show VS for all unfinished matches (regardless of predictions)
                           <Text style={styles.versus}>VS</Text>
                         )}
                       </View>
@@ -358,9 +369,19 @@ export default function ParticipateCompetitionScreen() {
                         <Text style={styles.predictionText}>
                           Your prediction: {prediction.home_score} - {prediction.away_score}
                         </Text>
+                        {match.status === 'FINISHED' && match.home_score !== null && match.away_score !== null && (
+                          <Text style={styles.actualResultText}>
+                            Actual result: {match.home_score} - {match.away_score}
+                          </Text>
+                        )}
                         {prediction.points_earned > 0 && (
                           <Text style={styles.pointsText}>
-                            Points: {prediction.points_earned}
+                            Points earned: {prediction.points_earned}
+                          </Text>
+                        )}
+                        {match.status === 'FINISHED' && prediction.points_earned === 0 && (
+                          <Text style={styles.noPointsText}>
+                            No points earned
                           </Text>
                         )}
                       </View>
@@ -388,14 +409,63 @@ export default function ParticipateCompetitionScreen() {
           onRequestClose={() => setPredictionModalVisible(false)}
         >
           <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Make Your Prediction</Text>
+            <LinearGradient
+              colors={gradientColors}
+              style={styles.modalContent}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              {/* Header with close button */}
+              <View style={styles.modalHeader}>
+                <TouchableOpacity
+                  style={styles.modalCloseButton}
+                  onPress={() => setPredictionModalVisible(false)}
+                >
+                  <Text style={styles.modalCloseButtonText}>×</Text>
+                </TouchableOpacity>
+                <Text style={styles.modalTitle}>Make Your Prediction</Text>
+                <View style={styles.modalPlaceholder} />
+              </View>
 
               {selectedMatch && (
                 <View style={styles.modalMatchInfo}>
-                  <Text style={styles.modalMatchText}>
-                    {selectedMatch.home_team?.short_name || selectedMatch.home_team?.name} vs {selectedMatch.away_team?.short_name || selectedMatch.away_team?.name}
-                  </Text>
+                  <View style={styles.modalTeamsContainer}>
+                    <View style={styles.modalTeam}>
+                      <View style={styles.modalTeamLogoContainer}>
+                        {selectedMatch.home_team?.crest ? (
+                          <Image
+                            source={{ uri: selectedMatch.home_team.crest }}
+                            style={styles.modalTeamCrest}
+                            defaultSource={require('@/assets/images/react-logo.png')}
+                          />
+                        ) : (
+                          <Text style={styles.modalTeamLogo}>⚽</Text>
+                        )}
+                      </View>
+                      <Text style={styles.modalTeamName} numberOfLines={2}>
+                        {selectedMatch.home_team?.short_name || selectedMatch.home_team?.name || 'TBA'}
+                      </Text>
+                    </View>
+
+                    <Text style={styles.modalVersus}>VS</Text>
+
+                    <View style={styles.modalTeam}>
+                      <View style={styles.modalTeamLogoContainer}>
+                        {selectedMatch.away_team?.crest ? (
+                          <Image
+                            source={{ uri: selectedMatch.away_team.crest }}
+                            style={styles.modalTeamCrest}
+                            defaultSource={require('@/assets/images/react-logo.png')}
+                          />
+                        ) : (
+                          <Text style={styles.modalTeamLogo}>⚽</Text>
+                        )}
+                      </View>
+                      <Text style={styles.modalTeamName} numberOfLines={2}>
+                        {selectedMatch.away_team?.short_name || selectedMatch.away_team?.name || 'TBA'}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
               )}
 
@@ -442,9 +512,18 @@ export default function ParticipateCompetitionScreen() {
                   <Text style={styles.modalButtonTextSave}>Save Prediction</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </LinearGradient>
           </View>
         </Modal>
+
+        {/* Custom Alert */}
+        <CustomAlert
+          visible={alertState.visible}
+          title={alertState.title}
+          message={alertState.message}
+          buttons={alertState.buttons}
+          onClose={hideAlert}
+        />
       </LinearGradient>
     </>
   );
@@ -588,6 +667,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textDecorationLine: 'none',
   },
+  actualScore: {
+    fontSize: 20,
+    color: '#4CAF50',
+    fontWeight: 'bold',
+    textDecorationLine: 'none',
+  },
   predictionInfo: {
     marginTop: 12,
     paddingTop: 12,
@@ -601,9 +686,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textDecorationLine: 'none',
   },
+  actualResultText: {
+    fontSize: 14,
+    color: '#4CAF50',
+    fontWeight: '600',
+    marginTop: 4,
+    textDecorationLine: 'none',
+  },
   pointsText: {
     fontSize: 12,
     color: '#4CAF50',
+    fontWeight: '600',
+    marginTop: 4,
+    textDecorationLine: 'none',
+  },
+  noPointsText: {
+    fontSize: 12,
+    color: '#FF5722',
     fontWeight: '600',
     marginTop: 4,
     textDecorationLine: 'none',
@@ -646,46 +745,117 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
   },
   modalContent: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     width: '100%',
     maxWidth: 400,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 10,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  modalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCloseButtonText: {
+    fontSize: 20,
+    color: '#ffffff',
+    fontWeight: 'bold',
+    textDecorationLine: 'none',
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#ffffff',
     textAlign: 'center',
-    marginBottom: 16,
     textDecorationLine: 'none',
+  },
+  modalPlaceholder: {
+    width: 36,
   },
   modalMatchInfo: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
-  modalMatchText: {
-    fontSize: 16,
-    color: '#ffffff',
-    textAlign: 'center',
-    fontWeight: '600',
+  modalTeamsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalTeam: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  modalTeamLogoContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  modalTeamLogo: {
+    fontSize: 20,
     textDecorationLine: 'none',
+  },
+  modalTeamCrest: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  modalTeamName: {
+    fontSize: 14,
+    color: '#ffffff',
+    fontWeight: '600',
+    textAlign: 'center',
+    textDecorationLine: 'none',
+    maxWidth: 100,
+  },
+  modalVersus: {
+    fontSize: 18,
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontWeight: 'bold',
+    textDecorationLine: 'none',
+    marginHorizontal: 20,
   },
   scoreInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
+    marginBottom: 32,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   scoreInput: {
     alignItems: 'center',
@@ -698,52 +868,56 @@ const styles = StyleSheet.create({
     textDecorationLine: 'none',
   },
   input: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    fontSize: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    fontSize: 20,
     color: '#ffffff',
     textAlign: 'center',
-    minWidth: 80,
+    minWidth: 100,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    fontWeight: 'bold',
   },
   scoreSeparator: {
-    fontSize: 24,
+    fontSize: 28,
     color: '#ffffff',
     fontWeight: 'bold',
-    marginHorizontal: 20,
+    marginHorizontal: 24,
     textDecorationLine: 'none',
   },
   modalButtons: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 16,
+    marginTop: 8,
   },
   modalButtonCancel: {
     flex: 1,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 8,
-    paddingVertical: 12,
+    borderRadius: 12,
+    paddingVertical: 16,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   modalButtonTextCancel: {
     fontSize: 16,
     color: '#ffffff',
-    fontWeight: '600',
+    fontWeight: '700',
     textDecorationLine: 'none',
   },
   modalButtonSave: {
     flex: 1,
-    backgroundColor: '#4CAF50',
-    borderRadius: 8,
-    paddingVertical: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 12,
+    paddingVertical: 16,
     alignItems: 'center',
   },
   modalButtonTextSave: {
     fontSize: 16,
-    color: '#ffffff',
-    fontWeight: '600',
+    color: '#1a1a1a',
+    fontWeight: '700',
     textDecorationLine: 'none',
   },
 });
