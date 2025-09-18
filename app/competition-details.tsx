@@ -1,4 +1,4 @@
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Image } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,6 +7,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/auth-context';
+import { CustomAlert } from '@/components/custom-alert';
+import { CustomConfirmation } from '@/components/custom-confirmation';
 
 interface Match {
   id: string;
@@ -46,6 +48,7 @@ interface CompetitionDetails {
   description?: string;
   status: string;
   created_at: string;
+  created_by: string;
 }
 
 export default function CompetitionDetailsScreen() {
@@ -62,6 +65,12 @@ export default function CompetitionDetailsScreen() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Modal states
+  const [showErrorAlert, setShowErrorAlert] = useState(false);
+  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
+
   useEffect(() => {
     if (competitionId) {
       fetchCompetitionDetails();
@@ -73,13 +82,14 @@ export default function CompetitionDetailsScreen() {
       // Fetch competition info
       const { data: competitionData, error: competitionError } = await supabase
         .from('friendly_competitions')
-        .select('*')
+        .select('id, name, description, status, created_at, created_by')
         .eq('id', competitionId)
         .single();
 
       if (competitionError) {
         console.error('Error fetching competition:', competitionError);
-        Alert.alert('Error', 'Unable to load competition details');
+        setAlertMessage('Unable to load competition details');
+        setShowErrorAlert(true);
         return;
       }
 
@@ -115,7 +125,7 @@ export default function CompetitionDetailsScreen() {
           user_id,
           status,
           joined_at,
-          profiles (
+          profiles!friendly_competition_participants_user_id_fkey (
             id,
             email,
             full_name,
@@ -132,7 +142,8 @@ export default function CompetitionDetailsScreen() {
 
     } catch (error) {
       console.error('Error:', error);
-      Alert.alert('Error', 'An error occurred');
+      setAlertMessage('An error occurred');
+      setShowErrorAlert(true);
     } finally {
       setLoading(false);
     }
@@ -150,6 +161,57 @@ export default function CompetitionDetailsScreen() {
   const handleBack = () => {
     router.back();
   };
+
+  const handleDeleteCompetition = () => {
+    setShowDeleteConfirmation(true);
+  };
+
+  const confirmDeleteCompetition = async () => {
+    try {
+      setLoading(true);
+
+      console.log('Attempting to delete competition:', competitionId);
+      console.log('Current user ID:', user?.id);
+      console.log('Competition created by:', competition?.created_by);
+
+      const { data, error } = await supabase
+        .from('friendly_competitions')
+        .delete()
+        .eq('id', competitionId);
+
+      console.log('Delete result:', { data, error });
+
+      if (error) {
+        console.error('Detailed error deleting competition:', {
+          error,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        setAlertMessage(`Failed to delete competition: ${error.message}`);
+        setShowErrorAlert(true);
+        return;
+      }
+
+      console.log('Competition deleted successfully');
+      setAlertMessage('Competition deleted successfully');
+      setShowSuccessAlert(true);
+    } catch (error) {
+      console.error('Unexpected error:', error);
+      setAlertMessage('An unexpected error occurred while deleting the competition');
+      setShowErrorAlert(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSuccessAlertClose = () => {
+    setShowSuccessAlert(false);
+    router.back();
+  };
+
+  const isCreator = competition && user && competition.created_by === user.id;
 
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp * 1000);
@@ -205,7 +267,13 @@ export default function CompetitionDetailsScreen() {
               <Text style={styles.backButtonText}>←</Text>
             </TouchableOpacity>
             <Text style={styles.title} numberOfLines={1}>{competition?.name}</Text>
-            <View style={styles.placeholder} />
+            {isCreator ? (
+              <TouchableOpacity style={styles.deleteButton} onPress={handleDeleteCompetition}>
+                <Text style={styles.deleteButtonText}>🗑️</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.placeholder} />
+            )}
           </View>
 
           <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -329,6 +397,34 @@ export default function CompetitionDetailsScreen() {
           <View style={{ paddingBottom: Math.max(insets.bottom, 20) }} />
         </View>
       </LinearGradient>
+
+      {/* Custom Modals */}
+      <CustomAlert
+        visible={showErrorAlert}
+        title="Error"
+        message={alertMessage}
+        buttons={[{ text: 'OK' }]}
+        onClose={() => setShowErrorAlert(false)}
+      />
+
+      <CustomAlert
+        visible={showSuccessAlert}
+        title="Success"
+        message={alertMessage}
+        buttons={[{ text: 'OK' }]}
+        onClose={handleSuccessAlertClose}
+      />
+
+      <CustomConfirmation
+        visible={showDeleteConfirmation}
+        title="Delete Competition"
+        message="Are you sure you want to delete this competition? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        destructive
+        onConfirm={confirmDeleteCompetition}
+        onCancel={() => setShowDeleteConfirmation(false)}
+      />
     </>
   );
 }
@@ -372,6 +468,22 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     width: 40,
+  },
+  deleteButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 82, 82, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 107, 0.4)',
+  },
+  deleteButtonText: {
+    fontSize: 16,
+    color: '#FF6B6B',
+    fontWeight: '600',
+    textDecorationLine: 'none',
   },
   scrollView: {
     flex: 1,

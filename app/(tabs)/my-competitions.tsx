@@ -2,9 +2,10 @@ import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIn
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { router } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/auth-context';
 
@@ -29,6 +30,15 @@ export default function MyCompetitionsScreen() {
   useEffect(() => {
     fetchCompetitions();
   }, [user?.id]);
+
+  // Refresh competitions when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.id) {
+        fetchCompetitions();
+      }
+    }, [user?.id])
+  );
 
   const fetchCompetitions = async () => {
     if (!user?.id) return;

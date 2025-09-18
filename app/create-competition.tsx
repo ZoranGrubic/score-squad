@@ -95,6 +95,18 @@ export default function CreateCompetitionScreen() {
         return;
       }
 
+      // Debug: Log competition and auth details
+      console.log('=== DEBUG COMPETITION CREATION ===');
+      console.log('Created competition:', competition);
+      console.log('Competition created_by:', competition.created_by);
+      console.log('Current user?.id:', user?.id);
+
+      // Get current auth user ID for comparison
+      const { data: authUser } = await supabase.auth.getUser();
+      console.log('Current auth.uid():', authUser?.user?.id);
+      console.log('Auth user matches competition creator:', authUser?.user?.id === competition.created_by);
+      console.log('==========================');
+
       // Add selected matches to the competition
       const matchInserts = selectedMatches.map(match => ({
         competition_id: competition.id,
@@ -138,61 +150,129 @@ export default function CreateCompetitionScreen() {
         });
       });
 
-      const participantInserts = selectedFriends.map(friend => ({
-        competition_id: competition.id,
-        user_id: friend.id,
-        invited_by: user?.id,
-        status: 'invited'
-      }));
+      // First, verify the competition exists and we have proper access
+      console.log('Verifying competition exists and checking creator access...');
+      const { data: verifyCompetition, error: verifyError } = await supabase
+        .from('friendly_competitions')
+        .select('id, created_by')
+        .eq('id', competition.id)
+        .eq('created_by', user?.id)
+        .single();
 
-      // Add the creator as a participant too (auto-accepted)
-      console.log('Adding creator as participant with user ID:', user?.id);
-      participantInserts.push({
-        competition_id: competition.id,
-        user_id: user?.id,
-        invited_by: user?.id,
-        status: 'accepted'
-      });
+      console.log('Competition verification:', { verifyCompetition, verifyError });
 
-      console.log('Final participant inserts array:', participantInserts);
-      console.log('Total participants to insert:', participantInserts.length);
-
-      const { data: insertedParticipants, error: participantsError } = await supabase
-        .from('friendly_competition_participants')
-        .insert(participantInserts)
-        .select();
-
-      console.log('Participants insert result:');
-      console.log('- Error:', participantsError);
-      console.log('- Inserted participants:', insertedParticipants);
-      console.log('- Expected count:', participantInserts.length);
-      console.log('- Actual count:', insertedParticipants?.length || 0);
-
-      if (participantsError) {
-        console.error('Detailed participants error:', participantsError);
-        Alert.alert('Error', `Failed to add participants: ${participantsError.message}`);
+      if (verifyError || !verifyCompetition) {
+        console.error('Competition verification failed:', verifyError);
+        Alert.alert('Error', 'Competition verification failed. Cannot add participants.');
         return;
       }
 
-      if (!insertedParticipants || insertedParticipants.length !== participantInserts.length) {
-        console.error('Mismatch in inserted participants count');
-        Alert.alert('Warning', 'Some participants may not have been added correctly');
+      // Add participants one by one for better error handling
+      const allParticipants = [
+        // Add the creator first (auto-accepted)
+        {
+          competition_id: competition.id,
+          user_id: user?.id,
+          invited_by: user?.id,
+          status: 'accepted'
+        },
+        // Add selected friends
+        ...selectedFriends.map(friend => ({
+          competition_id: competition.id,
+          user_id: friend.id,
+          invited_by: user?.id,
+          status: 'invited'
+        }))
+      ];
+
+      // First, let's check if all participants exist in profiles table
+      console.log('Checking if all participants exist in profiles table...');
+      for (const participant of allParticipants) {
+        const { data: profileCheck, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, email')
+          .eq('id', participant.user_id)
+          .single();
+
+        console.log(`Profile check for ${participant.user_id}:`, { profileCheck, profileError });
       }
 
-      // Success!
-      Alert.alert(
-        'Success!',
-        `Competition "${competitionName}" created with ${selectedMatches.length} matches and ${selectedFriends.length} friends!`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              clearAll();
-              router.push('/(tabs)');
+      console.log('Adding participants one by one...', allParticipants);
+
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      for (let i = 0; i < allParticipants.length; i++) {
+        const participant = allParticipants[i];
+        console.log(`Adding participant ${i + 1}/${allParticipants.length}:`, participant);
+
+        const { data: insertedParticipant, error: participantError } = await supabase
+          .from('friendly_competition_participants')
+          .insert([participant])
+          .select();
+
+        if (participantError) {
+          errorCount++;
+          const errorMsg = `Participant ${participant.user_id}: ${participantError.message}`;
+          errors.push(errorMsg);
+          console.error(`ERROR adding participant ${i + 1}:`, {
+            participant,
+            error: participantError,
+            code: participantError.code,
+            details: participantError.details,
+            hint: participantError.hint
+          });
+        } else {
+          successCount++;
+          console.log(`SUCCESS adding participant ${i + 1}:`, insertedParticipant);
+        }
+      }
+
+      console.log(`FINAL RESULTS: ${successCount} successful, ${errorCount} failed out of ${allParticipants.length} total`);
+      if (errors.length > 0) {
+        console.log('Detailed errors:', errors);
+      }
+
+      console.log(`Successfully added ${successCount}/${allParticipants.length} participants`);
+
+      if (successCount === 0) {
+        Alert.alert('Error', 'Failed to add any participants to the competition');
+        return;
+      }
+
+      if (errorCount > 0) {
+        console.error('Not all participants were added successfully');
+        const failedList = errors.join('\n');
+        Alert.alert(
+          'Partial Success',
+          `Competition created successfully!\n\n${successCount} participants added, ${errorCount} failed.\n\nFailed:\n${failedList}`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                clearAll();
+                router.push('/(tabs)');
+              }
             }
-          }
-        ]
-      );
+          ]
+        );
+      } else {
+        // Full success!
+        Alert.alert(
+          'Success!',
+          `Competition "${competitionName}" created successfully with ${selectedMatches.length} matches and ${successCount} participants!`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                clearAll();
+                router.push('/(tabs)');
+              }
+            }
+          ]
+        );
+      }
 
     } catch (error) {
       console.error('Error creating competition:', error);
